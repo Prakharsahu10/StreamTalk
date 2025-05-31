@@ -1,4 +1,5 @@
 import User from "../models/user.model.js";
+import Message from "../models/message.model.js";
 
 export const getUsersForSidebar = async (req, res) => {
   try {
@@ -7,7 +8,7 @@ export const getUsersForSidebar = async (req, res) => {
       _id: { $ne: loggedInUserId },
     }).select("-password");
 
-    res.status(200).json({ filteredUsers });
+    res.status(200).json(filteredUsers);
   } catch (error) {
     console.error("Error in getUsersForSidebar controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
