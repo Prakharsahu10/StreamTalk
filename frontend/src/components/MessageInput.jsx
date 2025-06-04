@@ -35,7 +35,15 @@ const MessageInput = () => {
         text: text.trim(),
         image: imagePreview,
       };
+      console.log("Sending message:", messageData);
+
+      // Show a temporary sending indicator
+      const sendingToast = toast.loading("Sending message...");
+
       await sendMessage(messageData);
+
+      // Update toast to show success
+      toast.success("Message sent", { id: sendingToast });
 
       setText("");
       setImagePreview(null);

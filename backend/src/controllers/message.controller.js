@@ -45,8 +45,17 @@ export const sendMessage = async (req, res) => {
 
     let imageUrl;
     if (image) {
-      const uploadResponse = await cloudinary.uploader.upload(image);
-      imageUrl = uploadResponse.secure_url;
+      try {
+        const uploadResponse = await cloudinary.uploader.upload(image, {
+          resource_type: "auto",
+          timeout: 60000, // Increase timeout for large uploads
+        });
+        imageUrl = uploadResponse.secure_url;
+        console.log("Image uploaded successfully to Cloudinary");
+      } catch (uploadError) {
+        console.error("Error uploading to Cloudinary:", uploadError);
+        return res.status(500).json({ message: "Error uploading image" });
+      }
     }
 
     const newMessage = new Message({
@@ -55,13 +64,53 @@ export const sendMessage = async (req, res) => {
       text,
       image: imageUrl,
     });
+    const savedMessage = await newMessage.save();
+    console.log("Message saved:", savedMessage._id);
+    // Convert ObjectIds to strings for consistent comparison
+    const senderIdStr = senderId.toString();
+    const receiverIdStr = receiverId.toString();
 
-    await newMessage.save();
+    console.log(`Sending message from ${senderIdStr} to ${receiverIdStr}`);
 
-    // implement socket.io logic to emit the message to the receiver
-    const receiverSocketId = getReceiverSocketId(receiverId);
+    // Get sender's socket ID
+    const senderSocketId = getReceiverSocketId(senderIdStr);
+
+    // Get receiver's socket ID
+    const receiverSocketId = getReceiverSocketId(receiverIdStr); // Broadcast the message to all clients - this ensures both sides get the update
+    // (more reliable than individual emits)
+    console.log("Broadcasting new message to all connected clients");
+    // Create a plain object with string IDs to avoid MongoDB ObjectId issues
+    const messageToSend = {
+      ...savedMessage.toObject(),
+      senderId: senderIdStr,
+      receiverId: receiverIdStr,
+      _id: savedMessage._id.toString(),
+      createdAt: savedMessage.createdAt.toISOString(),
+      updatedAt: savedMessage.updatedAt.toISOString(),
+    };
+
+    console.log("MessageToSend details:", {
+      sender: messageToSend.senderId,
+      receiver: messageToSend.receiverId,
+      id: messageToSend._id,
+    });
+
+    // First emit to all clients - broadcast approach
+    io.emit("newMessage", messageToSend);
+
+    // Then also do targeted emits as backup
     if (receiverSocketId) {
-      io.to(receiverSocketId).emit("newMessage", newMessage);
+      console.log("Emitting directly to receiver:", receiverSocketId);
+      io.to(receiverSocketId).emit("newMessage", messageToSend);
+    }
+
+    // Also emit to the sender so they see their own message in real-time
+    if (senderSocketId) {
+      console.log(
+        "Emitting message directly to sender socket:",
+        senderSocketId
+      );
+      io.to(senderSocketId).emit("newMessage", messageToSend);
     }
 
     res.status(200).json(newMessage);

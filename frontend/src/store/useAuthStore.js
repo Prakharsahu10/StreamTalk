@@ -3,7 +3,8 @@ import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
 import { io, Socket } from "socket.io-client";
 
-const BASE_URL = "http://localhost:5001";
+const BASE_URL =
+  import.meta.env.MODE === "development" ? "http://localhost:5001" : "/api";
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -13,12 +14,18 @@ export const useAuthStore = create((set, get) => ({
   isCheckingAuth: true,
   onlineUsers: [],
   socket: null,
-
   checkAuth: async () => {
     try {
       const response = await axiosInstance.get("/auth/check");
       set({ authUser: response.data });
-      get().connectSocket(); // Connect socket after checking auth
+
+      // Ensure we disconnect any existing socket before reconnecting
+      get().disconnectSocket();
+
+      // Connect socket after checking auth
+      setTimeout(() => {
+        get().connectSocket();
+      }, 100); // Small delay to ensure proper sequence
     } catch (error) {
       console.log("Error checking auth", error);
       set({ authUser: null });
@@ -55,16 +62,15 @@ export const useAuthStore = create((set, get) => ({
       set({ isLoggingIn: false });
     }
   },
-
   logout: async () => {
     try {
       await axiosInstance.post("/auth/logout");
       set({ authUser: null });
       toast.success("Logged out successfully");
+      get().disconnectSocket(); // Disconnect socket on logout
     } catch (error) {
       console.log("Error logging out", error);
       toast.error(error.response?.data?.message || "Error logging out");
-      get.disconnectSocket(); // Disconnect socket on logout
     }
   },
 
@@ -81,26 +87,64 @@ export const useAuthStore = create((set, get) => ({
       set({ isUpdatingProfile: false });
     }
   },
-
   connectSocket: () => {
     const { authUser } = get();
-    if (!authUser || get().socket?.socket.connected) return;
+    if (!authUser) return;
 
-    const socket = io(BASE_URL, {
-      query: {
-        userId: authUser._id,
-      },
-    });
-    socket.connect();
+    // If already connected, don't reconnect
+    if (get().socket?.connected) {
+      console.log("Socket already connected:", get().socket.id);
+      return;
+    }
+    try {
+      // Convert user ID to string for consistent comparison
+      const userIdStr = authUser._id.toString();
+      console.log("Attempting to connect socket for user:", userIdStr);
 
-    set({ socket: socket });
+      // Disconnect any existing socket before creating a new one
+      const existingSocket = get().socket;
+      if (existingSocket) {
+        console.log("Disconnecting existing socket before reconnecting");
+        existingSocket.disconnect();
+      }
 
-    socket.on("getOnlineUsers", (userIds) => {
-      set({ onlineUsers: userIds });
-    });
+      const socket = io(BASE_URL, {
+        query: {
+          userId: userIdStr,
+        },
+        transports: ["websocket", "polling"],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+      });
+
+      // Set up event handlers
+      socket.on("connect", () => {
+        console.log("Socket connected with ID:", socket.id);
+        set({ socket: socket });
+      });
+
+      socket.on("connect_error", (error) => {
+        console.error("Socket connection error:", error);
+      });
+
+      socket.on("getOnlineUsers", (userIds) => {
+        console.log("Online users updated:", userIds.length);
+        set({ onlineUsers: userIds });
+      });
+
+      // Connect the socket
+      socket.connect();
+    } catch (error) {
+      console.error("Error setting up socket connection:", error);
+    }
   },
 
   disconnectSocket: () => {
-    if (get().socket?.sonnected) get().socket.disconnect();
+    const socket = get().socket;
+    if (socket && socket.connected) {
+      socket.disconnect();
+      console.log("Socket disconnected");
+    }
   },
 }));
