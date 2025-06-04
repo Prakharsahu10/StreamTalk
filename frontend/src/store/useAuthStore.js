@@ -3,8 +3,9 @@ import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
 import { io, Socket } from "socket.io-client";
 
+// In production, use relative path which will connect to the same host
 const BASE_URL =
-  import.meta.env.MODE === "development" ? "http://localhost:5001" : "/api";
+  import.meta.env.MODE === "development" ? "http://localhost:5001" : "";
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
@@ -107,18 +108,19 @@ export const useAuthStore = create((set, get) => ({
         console.log("Disconnecting existing socket before reconnecting");
         existingSocket.disconnect();
       }
-
       const socket = io(BASE_URL, {
         query: {
           userId: userIdStr,
         },
         transports: ["websocket", "polling"],
         reconnection: true,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: 10,
         reconnectionDelay: 1000,
-      });
-
-      // Set up event handlers
+        timeout: 20000,
+        withCredentials: true,
+        forceNew: true,
+        autoConnect: true,
+      }); // Set up event handlers
       socket.on("connect", () => {
         console.log("Socket connected with ID:", socket.id);
         set({ socket: socket });
@@ -126,6 +128,24 @@ export const useAuthStore = create((set, get) => ({
 
       socket.on("connect_error", (error) => {
         console.error("Socket connection error:", error);
+
+        // In production, attempt to reconnect after a delay
+        if (import.meta.env.MODE !== "development") {
+          console.log("Will attempt to reconnect in 5 seconds...");
+          setTimeout(() => {
+            console.log("Attempting to reconnect socket...");
+            socket.connect();
+          }, 5000);
+        }
+      });
+
+      socket.on("disconnect", (reason) => {
+        console.log("Socket disconnected:", reason);
+        if (reason === "io server disconnect" || reason === "transport close") {
+          // Server disconnected us, try to reconnect
+          console.log("Server disconnected, attempting to reconnect...");
+          socket.connect();
+        }
       });
 
       socket.on("getOnlineUsers", (userIds) => {

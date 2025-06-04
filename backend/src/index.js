@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import { connectDB } from "./lib/db.js";
 import authRoutes from "./routes/auth.route.js";
 import messageRoutes from "./routes/message.route.js";
+import debugRoutes from "./routes/debug.route.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import { app, server } from "./lib/socket.js";
@@ -28,12 +29,15 @@ app.use(
 
 app.use("/api/auth", authRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/debug", debugRoutes);
 
 if (process.env.NODE_ENV === "production") {
+  // Serve static files
   app.use(express.static(path.join(__dirname, "../frontend/dist")));
 
-  app.get(/(.*)/, (req, res) => {
-    res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
+  // Handle all routes for client-side routing
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
   });
 }
 
