@@ -18,6 +18,7 @@ const ChatContainer = () => {
 
   const { authUser } = useAuthStore();
   const messageEndRef = useRef(null);
+
   useEffect(() => {
     const loadChatData = async () => {
       if (selectedUser?._id) {

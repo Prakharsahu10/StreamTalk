@@ -37,6 +37,51 @@ export const getMessages = async (req, res) => {
   }
 };
 
+export const deleteChat = async (req, res) => {
+  try {
+    const { id: userToChatId } = req.params;
+    const myId = req.user._id;
+
+    // Delete all messages between the two users
+    const deleteResult = await Message.deleteMany({
+      $or: [
+        { senderId: myId, receiverId: userToChatId },
+        { senderId: userToChatId, receiverId: myId },
+      ],
+    });
+
+    // Emit socket event to notify both users about chat deletion
+    const senderIdStr = myId.toString();
+    const receiverIdStr = userToChatId.toString();
+
+    const senderSocketId = getReceiverSocketId(senderIdStr);
+    const receiverSocketId = getReceiverSocketId(receiverIdStr);
+
+    // Notify both users about chat deletion
+    const chatDeletedData = {
+      deletedBy: senderIdStr,
+      chatWith: receiverIdStr,
+      timestamp: new Date().toISOString()
+    };
+
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("chatDeleted", chatDeletedData);
+    }
+
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("chatDeleted", chatDeletedData);
+    }
+
+    res.status(200).json({
+      message: "Chat deleted successfully",
+      deletedCount: deleteResult.deletedCount
+    });
+  } catch (error) {
+    console.error("Error in deleteChat controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 export const sendMessage = async (req, res) => {
   try {
     const { text, image } = req.body;
@@ -44,6 +89,8 @@ export const sendMessage = async (req, res) => {
     const senderId = req.user._id;
 
     let imageUrl;
+
+    // Handle image upload
     if (image) {
       try {
         const uploadResponse = await cloudinary.uploader.upload(image, {
@@ -53,7 +100,7 @@ export const sendMessage = async (req, res) => {
         imageUrl = uploadResponse.secure_url;
         console.log("Image uploaded successfully to Cloudinary");
       } catch (uploadError) {
-        console.error("Error uploading to Cloudinary:", uploadError);
+        console.error("Error uploading image to Cloudinary:", uploadError);
         return res.status(500).json({ message: "Error uploading image" });
       }
     }

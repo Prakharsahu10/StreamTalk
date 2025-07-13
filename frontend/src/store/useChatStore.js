@@ -92,6 +92,27 @@ export const useChatStore = create(
           throw error;
         }
       },
+
+      deleteChat: async (userId) => {
+        try {
+          const response = await axiosInstance.delete(`/messages/chat/${userId}`);
+
+          // Clear messages if this is the currently selected chat
+          const { selectedUser } = get();
+          if (selectedUser && selectedUser._id === userId) {
+            set({ messages: [] });
+          }
+
+          toast.success("Chat deleted successfully");
+          return response.data;
+        } catch (error) {
+          console.error("Error deleting chat:", error);
+          toast.error(
+            error.response?.data?.message || "Failed to delete chat"
+          );
+          throw error;
+        }
+      },
       subscribeToMessages: () => {
         const { selectedUser } = get();
         if (!selectedUser) {
@@ -111,7 +132,10 @@ export const useChatStore = create(
         );
 
         // First remove any existing listeners to avoid duplicates
-        socket.off("newMessage"); // Then add new listener with improved handling
+        socket.off("newMessage");
+        socket.off("chatDeleted");
+
+        // Then add new listener with improved handling
         socket.on("newMessage", (newMessage) => {
           console.log("New message received via socket:", newMessage); // Determine if this message belongs to the current conversation
           const authUser = useAuthStore.getState().authUser;
@@ -178,12 +202,33 @@ export const useChatStore = create(
             return { messages: updatedMessages };
           });
         });
+
+        // Handle chat deletion
+        socket.on("chatDeleted", (data) => {
+          console.log("Chat deleted via socket:", data);
+          const { selectedUser } = get();
+          const authUser = useAuthStore.getState().authUser;
+
+          if (!authUser) return;
+
+          const authUserId = authUser._id.toString();
+          const chatWithUserId = data.chatWith;
+
+          // If the deleted chat is the currently selected chat, clear messages
+          if (selectedUser && selectedUser._id === chatWithUserId) {
+            set({ messages: [] });
+            if (data.deletedBy !== authUserId) {
+              toast.info("This chat was deleted by the other user");
+            }
+          }
+        });
       },
       unsubscribeFromMessages: () => {
         const socket = useAuthStore.getState().socket;
         if (socket) {
-          console.log("Removing newMessage event listener");
+          console.log("Removing socket event listeners");
           socket.off("newMessage");
+          socket.off("chatDeleted");
         }
       },
 

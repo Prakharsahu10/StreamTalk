@@ -1,13 +1,34 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { useChatStore } from "../store/useChatStore";
-import { X, Image, Send } from "lucide-react";
+import { X, Image, Send, Smile } from "lucide-react";
 import toast from "react-hot-toast";
+import EmojiPicker from "emoji-picker-react";
 
 const MessageInput = () => {
   const [text, setText] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
-  const fileInputRef = useRef(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const imageInputRef = useRef(null);
+  const emojiPickerRef = useRef(null);
   const { sendMessage } = useChatStore();
+
+  // Close emoji picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (!file.type.startsWith("image/")) {
@@ -24,8 +45,14 @@ const MessageInput = () => {
 
   const removeImage = () => {
     setImagePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (imageInputRef.current) imageInputRef.current.value = "";
   };
+
+  const handleEmojiClick = (emojiObject) => {
+    setText(text + emojiObject.emoji);
+    setShowEmojiPicker(false);
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!text.trim() && !imagePreview) return;
@@ -47,7 +74,8 @@ const MessageInput = () => {
 
       setText("");
       setImagePreview(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setShowEmojiPicker(false);
+      if (imageInputRef.current) imageInputRef.current.value = "";
     } catch (error) {
       console.error("Error sending message:", error);
       toast.error("Failed to send message");
@@ -55,7 +83,24 @@ const MessageInput = () => {
   };
 
   return (
-    <div className="p-4 w-full">
+    <div className="p-4 w-full relative">
+      {/* Emoji Picker */}
+      {showEmojiPicker && (
+        <div
+          ref={emojiPickerRef}
+          className="absolute bottom-20 right-0 sm:right-4 z-50"
+        >
+          <EmojiPicker
+            onEmojiClick={handleEmojiClick}
+            theme="dark"
+            height={400}
+            width={350}
+            previewConfig={{ showPreview: false }}
+            className="shadow-lg"
+          />
+        </div>
+      )}
+
       {imagePreview && (
         <div className="mb-3 flex items-center gap-2">
           <div className="relative">
@@ -89,7 +134,7 @@ const MessageInput = () => {
             type="file"
             accept="image/*"
             className="hidden"
-            ref={fileInputRef}
+            ref={imageInputRef}
             onChange={handleImageChange}
           />
 
@@ -97,11 +142,40 @@ const MessageInput = () => {
             type="button"
             className={`hidden sm:flex btn btn-circle btn-sm
           ${imagePreview ? "text-emerald-500" : "text-zinc-400"}`}
-            onClick={() => fileInputRef.current.click()}
+            onClick={() => imageInputRef.current.click()}
           >
             <Image size={20} />
           </button>
+
+          <button
+            type="button"
+            className={`hidden sm:flex btn btn-circle btn-sm relative
+          ${showEmojiPicker ? "text-emerald-500" : "text-zinc-400"}`}
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          >
+            <Smile size={20} />
+          </button>
         </div>
+
+        {/* Mobile buttons */}
+        <button
+          type="button"
+          className={`sm:hidden btn btn-circle btn-sm
+        ${imagePreview ? "text-emerald-500" : "text-zinc-400"}`}
+          onClick={() => imageInputRef.current.click()}
+        >
+          <Image size={18} />
+        </button>
+
+        <button
+          type="button"
+          className={`sm:hidden btn btn-circle btn-sm
+        ${showEmojiPicker ? "text-emerald-500" : "text-zinc-400"}`}
+          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+        >
+          <Smile size={18} />
+        </button>
+
         <button
           type="submit"
           className="btn btn-sm btn-circle"
